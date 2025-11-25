@@ -26,14 +26,30 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
         run: |
+          # 프로젝트 디렉토리 생성 및 파일 전송
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "mkdir -p ~/ai-clusturing"
+          
+          # 파일 전송 (rsync 사용)
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            --exclude '.git' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude '.venv' \
+            --exclude 'venv' \
+            --exclude '.env' \
+            ./ ${SSH_USER}@${SSH_HOST}:~/ai-clusturing/
+          
+          # 원격 서버에서 배포 실행
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} << 'EOF'
-            # 프로젝트 디렉토리로 이동
-            cd ~/ai-clusturing || cd /app/ai-clusturing || exit 1
+            cd ~/ai-clusturing || exit 1
             
-            # 최신 코드 가져오기
-            git pull origin main || git fetch origin main && git reset --hard origin/main
+            # 가상환경 생성 및 활성화 (없는 경우)
+            if [ ! -d "venv" ] && [ ! -d ".venv" ]; then
+              python3 -m venv venv
+            fi
             
-            # 가상환경 활성화 (있는 경우)
+            # 가상환경 활성화
             if [ -d "venv" ]; then
               source venv/bin/activate
             elif [ -d ".venv" ]; then
