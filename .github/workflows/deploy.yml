@@ -60,12 +60,23 @@ jobs:
             pip install --upgrade pip
             pip install -r requirements.txt
             
-            # 기존 프로세스 종료 (있는 경우)
-            pkill -f "python.*main.py" || pkill -f "uvicorn.*main:app" || true
+            # 기존 프로세스 종료 (PID 파일 사용 - 더 안전)
+            if [ -f "server.pid" ]; then
+              OLD_PID=$(cat server.pid)
+              if ps -p $OLD_PID > /dev/null 2>&1; then
+                kill $OLD_PID 2>/dev/null || true
+                sleep 1
+                kill -9 $OLD_PID 2>/dev/null || true
+              fi
+              rm -f server.pid
+            fi
+            # PID 파일이 없으면 현재 디렉토리에서 실행 중인 프로세스만 종료
+            ps aux | grep "[p]ython.*$(pwd)/main.py" | awk '{print $2}' | xargs kill 2>/dev/null || true
             sleep 2
             
-            # 서버 백그라운드 실행
+            # 서버 백그라운드 실행 및 PID 저장
             nohup python main.py > server.log 2>&1 &
+            echo $! > server.pid
             
             # 프로세스 확인
             sleep 3
