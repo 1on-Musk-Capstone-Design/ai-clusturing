@@ -1,10 +1,13 @@
 name: CI/CD Pipeline
 
+# 배포 비활성화 (일시적으로 실행 안 함)
+# on:
+#   push:
+#     branches:
+#       - main
+#   workflow_dispatch:
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_dispatch:  # 수동 실행만 가능
 
 jobs:
   deploy:

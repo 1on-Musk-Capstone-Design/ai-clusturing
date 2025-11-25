@@ -15,7 +15,6 @@ from typing import List, Optional
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans
 import numpy as np
-from sklearn.decomposition import PCA
 import uvicorn
 
 app = FastAPI(
@@ -49,25 +48,16 @@ class ClusteringRequest(BaseModel):
     texts: List[str] = Field(..., description="클러스터링할 텍스트 리스트")
     n_clusters: int = Field(3, ge=2, le=50, description="클러스터 개수 (2-50)")
     model_name: Optional[str] = Field("all-MiniLM-L6-v2", description="사용할 모델 이름")
-    return_visualization: bool = Field(False, description="시각화 데이터 반환 여부")
 
 class ClusterResult(BaseModel):
     cluster_idx: int
     representative_text: str
     texts: List[str]
-    distances: List[float]
-
-class VisualizationData(BaseModel):
-    points: List[List[float]]  # [x, y] 좌표
-    labels: List[int]
-    centroids: List[List[float]]
-    representative_indices: List[int]
 
 class ClusteringResponse(BaseModel):
     clusters: List[ClusterResult]
     labels: List[int]
     n_clusters: int
-    visualization: Optional[VisualizationData] = None
 
 @app.get("/")
 async def root():
@@ -93,7 +83,6 @@ async def cluster_texts(request: ClusteringRequest):
     
     - texts: 클러스터링할 텍스트 리스트
     - n_clusters: 클러스터 개수
-    - return_visualization: 시각화 데이터 반환 여부
     """
     if not model:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -124,9 +113,8 @@ async def cluster_texts(request: ClusteringRequest):
         labels = kmeans.fit_predict(embeddings)
         centroids = kmeans.cluster_centers_
         
-        # 3. 군집별 중심 단어와 나머지 단어 거리 순서대로 출력
+        # 3. 클러스터별로 묶기
         clusters = []
-        representative_indices = []
         
         for cluster_idx in range(request.n_clusters):
             cluster_mask = labels == cluster_idx
@@ -134,50 +122,27 @@ async def cluster_texts(request: ClusteringRequest):
             cluster_texts = np.array(request.texts)[cluster_mask]
             centroid = centroids[cluster_idx]
             
-            # centroid와 각 문장 거리 계산
+            # centroid와 각 문장 거리 계산 (대표 텍스트 선택용)
             distances = np.linalg.norm(cluster_vecs - centroid, axis=1)
             
-            # centroid와 가장 가까운 문장 선택 (중심 단어)
+            # centroid와 가장 가까운 문장 선택 (대표 텍스트)
             rep_idx = np.argmin(distances)
             rep_text = cluster_texts[rep_idx]
             
-            # 전체 텍스트 리스트에서의 인덱스 찾기
-            cluster_text_indices = np.where(cluster_mask)[0]
-            global_rep_idx = cluster_text_indices[rep_idx]
-            representative_indices.append(int(global_rep_idx))
-            
-            # 거리 순서대로 정렬
+            # 거리 순서대로 정렬 (대표 텍스트가 첫 번째로 오도록)
             sorted_indices = np.argsort(distances)
             sorted_texts = cluster_texts[sorted_indices].tolist()
-            sorted_distances = distances[sorted_indices].tolist()
             
             clusters.append(ClusterResult(
                 cluster_idx=cluster_idx,
                 representative_text=rep_text,
-                texts=sorted_texts,
-                distances=sorted_distances
+                texts=sorted_texts
             ))
-        
-        # 4. 시각화 데이터 생성 (요청 시)
-        visualization = None
-        if request.return_visualization:
-            # 차원 축소 (2D)
-            pca = PCA(n_components=2)
-            reduced = pca.fit_transform(embeddings)
-            reduced_centroids = pca.transform(centroids)
-            
-            visualization = VisualizationData(
-                points=reduced.tolist(),
-                labels=labels.tolist(),
-                centroids=reduced_centroids.tolist(),
-                representative_indices=representative_indices
-            )
         
         return ClusteringResponse(
             clusters=clusters,
             labels=labels.tolist(),
-            n_clusters=request.n_clusters,
-            visualization=visualization
+            n_clusters=request.n_clusters
         )
     
     except Exception as e:
