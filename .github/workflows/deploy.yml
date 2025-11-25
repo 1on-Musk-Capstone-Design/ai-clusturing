@@ -60,9 +60,22 @@ jobs:
             pip install --upgrade pip
             pip install -r requirements.txt
             
-            # 서비스 재시작 (systemd 또는 pm2 등 사용 시)
-            # sudo systemctl restart ai-clusturing || true
-            # pm2 restart ai-clusturing || true
+            # 기존 프로세스 종료 (있는 경우)
+            pkill -f "python.*main.py" || pkill -f "uvicorn.*main:app" || true
+            sleep 2
+            
+            # 서버 백그라운드 실행
+            nohup python main.py > server.log 2>&1 &
+            
+            # 프로세스 확인
+            sleep 3
+            if pgrep -f "python.*main.py" > /dev/null; then
+              echo "Server started successfully!"
+              netstat -tuln | grep 8002 || echo "Port check: waiting for server to bind..."
+            else
+              echo "Warning: Server may not have started. Check server.log"
+              tail -20 server.log || true
+            fi
             
             echo "Deployment completed successfully!"
           EOF
