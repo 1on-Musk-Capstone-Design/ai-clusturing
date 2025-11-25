@@ -1,0 +1,58 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+      
+      - name: Deploy to server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} << 'EOF'
+            # 프로젝트 디렉토리로 이동
+            cd ~/ai-clusturing || cd /app/ai-clusturing || exit 1
+            
+            # 최신 코드 가져오기
+            git pull origin main || git fetch origin main && git reset --hard origin/main
+            
+            # 가상환경 활성화 (있는 경우)
+            if [ -d "venv" ]; then
+              source venv/bin/activate
+            elif [ -d ".venv" ]; then
+              source .venv/bin/activate
+            fi
+            
+            # 의존성 설치
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            
+            # 서비스 재시작 (systemd 또는 pm2 등 사용 시)
+            # sudo systemctl restart ai-clusturing || true
+            # pm2 restart ai-clusturing || true
+            
+            echo "Deployment completed successfully!"
+          EOF
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
+
